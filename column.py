@@ -4,7 +4,7 @@ class Column:
 
     def __init__(self, number):
         # Number of remaining cards to draw
-        self.nb_todraw = number-1
+        self.nb_todraw = number+1
         # List of cards of the column
         self.cards = []
 
@@ -67,7 +67,7 @@ class Column:
         :param card: (Card) the card to reveal
         """
         self.nb_todraw -= 1
-        self.add_cards(list(card))
+        self.add_cards([card])
 
     def remove_cards(self, number):
         """
@@ -77,5 +77,6 @@ class Column:
         cards = []
         for i in range(number):
             cards.append(self.cards.pop())
+        cards.reverse()
 
-        return cards.reverse()
+        return cards

@@ -51,6 +51,44 @@ class Solitaire_Engine:
         self.actions_dict = dict()
         self.legal_actions()
 
+    def is_over(self):
+        return self.is_won() or self.is_lost()
+
+    def is_won(self):
+        """
+        Checks if the game is won.
+        """
+        for heap in self.heaps:
+            if not heap.is_complete(): return False
+
+        return True
+
+    def is_lost(self):
+        """
+        Checks if a game is lost.
+        """
+        # Copy current state of sub-deck draw
+        sub_index_copy = copy.deepcopy(self.sub_deck_index)
+        sub_index_list = []
+
+        # Game over only if draw is the only possible action
+        if len(self.actions_dict) == 1 and self.can_draw():
+            # For each draw of the sub-deck, check if a card can be moved
+            while self.sub_deck_index not in sub_index_list:
+                self.draw()
+                sub_index_list.append(self.sub_deck_index)
+                for heap in range(NB_HEAPS):
+                    if self.can_deck_to_heap(heap):
+                        self.sub_deck_index = sub_index_copy
+                        return False
+                for col in range(NB_COLUMNS):
+                    if self.can_deck_to_column(col):
+                        self.sub_deck_index = sub_index_copy
+                        return False
+
+        self.sub_deck_index = sub_index_copy
+        return True
+
     def can_draw(self):
         """
         Checks a if a draw can be performed
@@ -145,10 +183,15 @@ class Solitaire_Engine:
         :param col: (int) index of the column
         :param heap: (int) index of the heap
         """
+        column = self.columns[col]
         if not self.can_column_to_heap(col, heap): return
 
-        cards = self.columns[col].remove_cards(1)
+        cards = column.remove_cards(1)
         self.heaps[heap].add_card(cards[0])
+
+        # Check if a new card has to be revealed
+        if column.need_reveal and (not column.is_empty()):
+            column.reveal_card(self.main_deck.draw(True))
 
     def can_heap_to_column(self, heap, col):
         """
@@ -189,28 +232,35 @@ class Solitaire_Engine:
         :param col2: (int) index of the second column
         :param nb_cards: (int) number of cards to move
         """
-        cards = self.columns[col1].remove_cards(nb_cards)
+        column = self.columns[col1]
+        cards = column.remove_cards(nb_cards)
         self.columns[col2].add_cards(cards)
+
+        # Check if a new card has to be revealed
+        if column.need_reveal and (not column.is_empty()):
+            column.reveal_card(self.main_deck.draw(True))
 
     def legal_actions(self):
         actions = []
         index_action = 0
+        self.actions_dict.clear()
+        table = self.actions_dict
 
         # Check draw
         if self.can_draw():
-            self.actions_dict[index_action] = (ACTIONS[0],[])
+            table[index_action] = (ACTIONS[0],[])
             actions.append(index_action)
             index_action += 1
         # Check deck-heap
         for heap in range(NB_HEAPS):
             if self.can_deck_to_heap(heap):
-                self.actions_dict[index_action] = (ACTIONS[1], [heap])
+                table[index_action] = (ACTIONS[1], [heap])
                 actions.append(index_action)
                 index_action += 1
         # Check deck-column
         for col in range(NB_COLUMNS):
             if self.can_deck_to_column(col):
-                self.actions_dict[index_action] = (ACTIONS[2], [col])
+                table[index_action] = (ACTIONS[2], [col])
                 actions.append(index_action)
                 index_action += 1
 
@@ -218,22 +268,71 @@ class Solitaire_Engine:
             for col1 in range(NB_COLUMNS):
                 # Check col-heap
                 if self.can_column_to_heap(col1, heap):
-                    self.actions_dict[index_action] = (ACTIONS[3], [col1, heap])
+                    table[index_action] = (ACTIONS[3], [col1, heap])
                     actions.append(index_action)
                     index_action += 1
                 # Check heap-col
                 if self.can_heap_to_column(heap, col1):
-                    self.actions_dict[index_action] = (ACTIONS[4], [heap, col1])
+                    table[index_action] = (ACTIONS[4], [heap, col1])
                     actions.append(index_action)
                     index_action += 1
-                for col2 in range(NB_COLUMNS):
-                    # Check col-col
-                    if col1 != col2:
-                        max_cards = len(self.columns[col1].cards)
-                        for nb_cards in range(1, max_cards+1):
-                            if self.can_column_to_column(col1, col2, nb_cards):
-                                self.actions_dict[index_action] = (ACTIONS[5], [col1, col2, nb_cards])
-                                actions.append(index_action)
-                                index_action += 1
+                if heap == 0:
+                    for col2 in range(NB_COLUMNS):
+                        # Check col-col
+                        if col1 != col2:
+                            max_cards = len(self.columns[col1].cards)
+                            for nb_cards in range(1, max_cards+1):
+                                if self.can_column_to_column(col1, col2,
+                                                             nb_cards):
+                                    table[index_action] = (ACTIONS[5],
+                                                           [col1, col2,
+                                                            nb_cards])
+                                    actions.append(index_action)
+                                    index_action += 1
+        return actions
 
+    def play(self, action):
+        value = self.actions_dict[action]
+        name = value[0]
+        args = value[1]
+        if name == ACTIONS[0]:
+            self.draw()
+        elif name == ACTIONS[1]:
+            self.deck_to_heap(args[0])
+        elif name == ACTIONS[2]:
+            self.deck_to_column(args[0])
+        elif name == ACTIONS[3]:
+            self.column_to_heap(args[0], args[1])
+        elif name == ACTIONS[4]:
+            self.heap_to_column(args[0], args[1])
+        else:
+            self.column_to_column(args[0], args[1], args[2])
+        self.legal_actions()
+
+    def render(self):
+
+        print("State:")
+        print("Draw deck:")
+        string = str(len(self.sub_deck))+" cards - "+\
+                 " ".join(str(x) for x in self.sub_deck_index)
+        if self.sub_deck_index:
+            card = self.sub_deck[self.sub_deck_index[-1]]
+            string += " - "+str(card.rank)+card.color
+        print(string)
+        print("Heaps:")
+        string = ""
+        for heap in self.heaps:
+            if heap.cards:
+                card = heap.cards[-1]
+                string += str(card.rank)+card.color+" "
+            else:
+                string += "-1 "
+        print(string)
+        print("Columns:")
+        for column in self.columns:
+            string = ""
+            string += ("? " * column.nb_todraw)
+            for card in column.cards:
+                string += str(card.rank)+card.color+" "
+            print(string)
 
