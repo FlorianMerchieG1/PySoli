@@ -1,4 +1,4 @@
-from card import *
+from Game.card import *
 
 class Column:
 
@@ -12,13 +12,13 @@ class Column:
         """
         Checks if a new card needs to be revealed
         """
-        return not self.cards
+        return (not self.cards) and (self.nb_todraw > 0)
 
     def is_empty(self):
         """
         Checks if a column is fully empty.
         """
-        return not self.cards and self.nb_todraw == 0
+        return (not self.cards) and (self.nb_todraw == 0)
 
     def same_color(self, card1, card2):
         """

@@ -1,4 +1,4 @@
-from card import *
+from Game.card import *
 
 class Heap:
 
@@ -10,7 +10,7 @@ class Heap:
         """
         Checks if the heap is complete
         """
-        return self.cards[-1] == KING
+        return self.cards[-1] == KING if self.cards else False
 
     def same_color(self, card1, card2):
         """
@@ -35,7 +35,7 @@ class Heap:
 
         top_card = self.cards[-1]
         if card.rank != top_card.rank+1: return False
-        if not self.same_color(top_card, card): return False
+        if card.color != top_card.color: return False
 
         return True
 

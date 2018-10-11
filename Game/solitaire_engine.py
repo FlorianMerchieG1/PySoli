@@ -1,43 +1,54 @@
+from __future__ import division
 import copy
-from deck import *
-from column import *
-from heap import *
+from Game.deck import *
+from Game.column import *
+from Game.heap import *
 
 NB_CARDS_SUBDECK = 24
 NB_HEAPS = 4
 NB_COLUMNS = 7
 
-ACTIONS = ['draw', 'deck-heap', 'deck-col', 'col-heap', 'heap-col', 'col-col']
+IN_HEAP = 'heap'
+IN_DECK = 'deck'
+IN_COL = 'col'
+UNDRAWN = 'undraw'
+
+GAMMA = 0.99
 
 """
-Actions:
-- draw sud-deck
-- column to heap
-    - X nb heaps
-    - X nb cols
-- heap to column
-    - X nb heaps
-    - X nb cols
-- sub-deck to column
-    - X nb cols
-- sub-deck to heap 
-    - X nb heaps
-- column to column 
-    - X nb cols
-    - X nb other cols
-    - X nb cards col
+0...6 -> column
+7 -> heap 
+8 -> undrawn
+9...32 -> deck
 """
+
+ACTIONS = ['draw', 'deck-heap', 'deck-col', 'col-heap', 'heap-col', 'col-col']
 
 class Solitaire_Engine:
 
     def __init__(self):
+        # State values dictionary
+        self.state_dict = dict()
+        for i in range(33):
+            if i <= 6:
+                self.state_dict[IN_COL + str(i)] = i
+            elif i == 7:
+                self.state_dict[IN_HEAP] = i
+            elif i == 8:
+                self.state_dict[UNDRAWN] = i
+            else:
+                self.state_dict[IN_DECK + str(i-9)] = i
+        # State information for each card
+        self.cards_state = dict()
         # Main deck where all cards are drawn
         self.main_deck = Deck()
         # Upper-left sub-deck
         self.sub_deck = []
         self.sub_deck_index = []
         for i in range(NB_CARDS_SUBDECK):
-            self.sub_deck.append(self.main_deck.draw())
+            card = self.main_deck.draw()
+            self.cards_state[(card.rank, card.color)] = self.state_dict[IN_DECK + str(i)]
+            self.sub_deck.append(card)
         # Heaps init
         self.heaps = []
         for i in range(NB_HEAPS):
@@ -46,10 +57,16 @@ class Solitaire_Engine:
         self.columns = []
         for i in range(NB_COLUMNS):
             self.columns.append(Column(i))
-            self.columns[i].reveal_card(self.main_deck.draw())
+            card = self.main_deck.draw()
+            self.cards_state[(card.rank, card.color)] = self.state_dict[IN_COL + str(i)]
+            self.columns[i].reveal_card(card)
         # Actions dictionary
         self.actions_dict = dict()
         self.legal_actions()
+        # Reward for scoring
+        self.reward = 0
+        self.time = 0
+        self.score = 0
 
     def is_over(self):
         return self.is_won() or self.is_lost()
@@ -67,27 +84,31 @@ class Solitaire_Engine:
         """
         Checks if a game is lost.
         """
-        # Copy current state of sub-deck draw
+        # Copy current state of sub-deck draw and legal actions
         sub_index_copy = copy.deepcopy(self.sub_deck_index)
+        legal_actions = copy.deepcopy(self.actions_dict)
         sub_index_list = []
+        n_draw = 0
 
         # Game over only if draw is the only possible action
         if len(self.actions_dict) == 1 and self.can_draw():
             # For each draw of the sub-deck, check if a card can be moved
-            while self.sub_deck_index not in sub_index_list:
+            while n_draw < 2*len(self.sub_deck)/3:
                 self.draw()
-                sub_index_list.append(self.sub_deck_index)
-                for heap in range(NB_HEAPS):
-                    if self.can_deck_to_heap(heap):
-                        self.sub_deck_index = sub_index_copy
-                        return False
-                for col in range(NB_COLUMNS):
-                    if self.can_deck_to_column(col):
-                        self.sub_deck_index = sub_index_copy
-                        return False
+                self.legal_actions()
+                if len(self.actions_dict) > 1:
+                    self.actions_dict = legal_actions
+                    self.sub_deck_index = sub_index_copy
+                    return False
+                n_draw += 1
+            return True
+        else: return False
 
-        self.sub_deck_index = sub_index_copy
-        return True
+    def get_reward(self):
+        """
+        Retrieves the result of the game
+        """
+        return self.reward
 
     def can_draw(self):
         """
@@ -111,6 +132,8 @@ class Solitaire_Engine:
         else:
             end = min(start+3, len(self.sub_deck))
             self.sub_deck_index = [i for i in range(start, end)]
+
+        self.reward = 0
 
     def can_deck_to_heap(self, heap):
         """
@@ -138,6 +161,16 @@ class Solitaire_Engine:
         card = self.sub_deck.pop(index_heap)
         self.heaps[heap].add_card(card)
 
+        # State update for moved card
+        self.cards_state[(card.rank, card.color)] = self.state_dict[IN_HEAP]
+        while index_heap < len(self.sub_deck):
+            card = self.sub_deck[index_heap]
+            self.cards_state[(card.rank, card.color)] = self.state_dict[IN_DECK + str(index_heap)]
+            index_heap += 1
+
+        # Reward update
+        self.reward = 10
+
     def can_deck_to_column(self, col):
         """
         Checks if the card from the deck can be added to a column
@@ -162,7 +195,17 @@ class Solitaire_Engine:
 
         index_heap = self.sub_deck_index.pop()
         card = self.sub_deck.pop(index_heap)
-        self.columns[col].add_cards(list(card))
+        self.columns[col].add_cards([card])
+
+        # State update for moved card
+        self.cards_state[(card.rank, card.color)] = self.state_dict[IN_COL + str(col)]
+        while index_heap < len(self.sub_deck):
+            card = self.sub_deck[index_heap]
+            self.cards_state[(card.rank, card.color)] = self.state_dict[IN_DECK + str(index_heap)]
+            index_heap += 1
+
+        # Reward update
+        self.reward = 5
 
     def can_column_to_heap(self, col, heap):
         """
@@ -188,10 +231,18 @@ class Solitaire_Engine:
 
         cards = column.remove_cards(1)
         self.heaps[heap].add_card(cards[0])
+        # State update for moved card
+        self.cards_state[(cards[0].rank, cards[0].color)] = self.state_dict[IN_HEAP]
+
+        # Reward update
+        self.reward = 10
 
         # Check if a new card has to be revealed
-        if column.need_reveal and (not column.is_empty()):
-            column.reveal_card(self.main_deck.draw(True))
+        if column.need_reveal():
+            card = self.main_deck.draw(True)
+            self.cards_state[(card.rank, card.color)] = self.state_dict[IN_COL + str(col)]
+            column.reveal_card(card)
+            self.reward += 5
 
     def can_heap_to_column(self, heap, col):
         """
@@ -202,6 +253,8 @@ class Solitaire_Engine:
         if not self.heaps[heap].can_remove(): return False
 
         card = self.heaps[heap].cards[-1]
+        # Useless to remove an Ace from the heap
+        if card.rank == ACE: return False
         if not self.columns[col].can_add(card): return False
 
         return True
@@ -213,7 +266,12 @@ class Solitaire_Engine:
         :param col: (int) index of the column
         """
         card = self.heaps[heap].remove_card()
-        self.columns[col].add_cards(list(card))
+        self.columns[col].add_cards([card])
+        # State update for moved card
+        self.cards_state[(card.rank, card.color)] = self.state_dict[IN_COL + str(col)]
+
+        # Reward update
+        self.reward = -15
 
     def can_column_to_column(self, col1, col2, nb_cards):
 
@@ -221,7 +279,7 @@ class Solitaire_Engine:
 
         column_copy = copy.deepcopy(self.columns[col1])
         cards = column_copy.remove_cards(nb_cards)
-        if not self.columns[col2].can_add(cards[-1]): return False
+        if not self.columns[col2].can_add(cards[0]): return False
 
         return True
 
@@ -235,13 +293,23 @@ class Solitaire_Engine:
         column = self.columns[col1]
         cards = column.remove_cards(nb_cards)
         self.columns[col2].add_cards(cards)
+        # State update for moved cards
+        for card in cards:
+            self.cards_state[(card.rank, card.color)] = self.state_dict[IN_COL + str(col2)]
+
+        self.reward = 0
 
         # Check if a new card has to be revealed
-        if column.need_reveal and (not column.is_empty()):
-            column.reveal_card(self.main_deck.draw(True))
+        if column.need_reveal():
+            card = self.main_deck.draw(True)
+            self.cards_state[(card.rank, card.color)] = self.state_dict[IN_COL + str(col1)]
+            column.reveal_card(card)
+            self.reward += 5
 
     def legal_actions(self):
-        actions = []
+        """
+        Retrieves all the legal actions of the current states.
+        """
         index_action = 0
         self.actions_dict.clear()
         table = self.actions_dict
@@ -249,19 +317,16 @@ class Solitaire_Engine:
         # Check draw
         if self.can_draw():
             table[index_action] = (ACTIONS[0],[])
-            actions.append(index_action)
             index_action += 1
         # Check deck-heap
         for heap in range(NB_HEAPS):
             if self.can_deck_to_heap(heap):
                 table[index_action] = (ACTIONS[1], [heap])
-                actions.append(index_action)
                 index_action += 1
         # Check deck-column
         for col in range(NB_COLUMNS):
             if self.can_deck_to_column(col):
                 table[index_action] = (ACTIONS[2], [col])
-                actions.append(index_action)
                 index_action += 1
 
         for heap in range(NB_HEAPS):
@@ -269,12 +334,10 @@ class Solitaire_Engine:
                 # Check col-heap
                 if self.can_column_to_heap(col1, heap):
                     table[index_action] = (ACTIONS[3], [col1, heap])
-                    actions.append(index_action)
                     index_action += 1
                 # Check heap-col
                 if self.can_heap_to_column(heap, col1):
                     table[index_action] = (ACTIONS[4], [heap, col1])
-                    actions.append(index_action)
                     index_action += 1
                 if heap == 0:
                     for col2 in range(NB_COLUMNS):
@@ -287,11 +350,14 @@ class Solitaire_Engine:
                                     table[index_action] = (ACTIONS[5],
                                                            [col1, col2,
                                                             nb_cards])
-                                    actions.append(index_action)
                                     index_action += 1
-        return actions
+        return list(self.actions_dict.keys())
 
     def play(self, action):
+        """
+        Plays an action
+        :param action: (int) key of the action to play
+        """
         value = self.actions_dict[action]
         name = value[0]
         args = value[1]
@@ -309,8 +375,39 @@ class Solitaire_Engine:
             self.column_to_column(args[0], args[1], args[2])
         self.legal_actions()
 
-    def render(self):
+        # Score updates
+        self.score += self.reward
+        self.time += 1
 
+    def chance_action(self, action):
+        """
+        Checks if an action involves randomness.
+        :param action: The action to perform
+        """
+        game = copy.deepcopy(self)
+        cards_before = len(game.main_deck.cards)
+        game.play(action)
+        cards_after = len(game.main_deck.cards)
+        if cards_after >= cards_before: return False
+        return True
+
+    def get_state(self):
+        """
+        Provides an aggregation of the state of the game.
+        """
+        state = []
+        for color in COLORS:
+            for rank in CARDS:
+                if (rank, color) in self.cards_state:
+                    state.append(self.cards_state[(rank, color)])
+                else:
+                    state.append(self.state_dict[UNDRAWN])
+        return state
+
+    def render(self):
+        """
+        Renders game in the console
+        """
         print("State:")
         print("Draw deck:")
         string = str(len(self.sub_deck))+" cards - "+\
@@ -335,4 +432,6 @@ class Solitaire_Engine:
             for card in column.cards:
                 string += str(card.rank)+card.color+" "
             print(string)
+        print("Score")
+        print(str(self.score))
 
