@@ -15,13 +15,6 @@ UNDRAWN = 'undraw'
 
 GAMMA = 0.99
 
-"""
-0...6 -> column
-7 -> heap 
-8 -> undrawn
-9...32 -> deck
-"""
-
 ACTIONS = ['draw', 'deck-heap', 'deck-col', 'col-heap', 'heap-col', 'col-col']
 
 class Solitaire_Engine:
@@ -63,6 +56,8 @@ class Solitaire_Engine:
         # Actions dictionary
         self.actions_dict = dict()
         self.legal_actions()
+        self.action_index_name = dict()
+        self.index_action_to_name()
         # Reward for scoring
         self.reward = 0
         self.time = 0
@@ -317,41 +312,90 @@ class Solitaire_Engine:
         # Check draw
         if self.can_draw():
             table[index_action] = (ACTIONS[0],[])
-            index_action += 1
+        index_action += 1
         # Check deck-heap
         for heap in range(NB_HEAPS):
             if self.can_deck_to_heap(heap):
                 table[index_action] = (ACTIONS[1], [heap])
-                index_action += 1
+            index_action += 1
         # Check deck-column
         for col in range(NB_COLUMNS):
             if self.can_deck_to_column(col):
                 table[index_action] = (ACTIONS[2], [col])
-                index_action += 1
+            index_action += 1
 
         for heap in range(NB_HEAPS):
             for col1 in range(NB_COLUMNS):
                 # Check col-heap
                 if self.can_column_to_heap(col1, heap):
                     table[index_action] = (ACTIONS[3], [col1, heap])
-                    index_action += 1
+                index_action += 1
+
+        for heap in range(NB_HEAPS):
+            for col1 in range(NB_COLUMNS):
                 # Check heap-col
                 if self.can_heap_to_column(heap, col1):
                     table[index_action] = (ACTIONS[4], [heap, col1])
-                    index_action += 1
-                if heap == 0:
-                    for col2 in range(NB_COLUMNS):
-                        # Check col-col
-                        if col1 != col2:
-                            max_cards = len(self.columns[col1].cards)
-                            for nb_cards in range(1, max_cards+1):
-                                if self.can_column_to_column(col1, col2,
-                                                             nb_cards):
-                                    table[index_action] = (ACTIONS[5],
-                                                           [col1, col2,
-                                                            nb_cards])
-                                    index_action += 1
+                index_action += 1
+
+        for col1 in range(NB_COLUMNS):
+                for col2 in range(NB_COLUMNS):
+                    # Check col-col
+                    if col1 != col2:
+                        max_cards = len(self.columns[col1].cards)
+                        max_nb_cards = -1
+                        # Choose action with the most cards
+                        for nb_cards in range(1, max_cards+1):
+                            if self.can_column_to_column(col1, col2, nb_cards):
+                                max_nb_cards = nb_cards
+                        if max_nb_cards > -1:
+                            table[index_action] = (ACTIONS[5],
+                                                   [col1, col2, max_nb_cards])
+                            index_action += 1
+
         return list(self.actions_dict.keys())
+
+    def index_action_to_name(self):
+        """
+        Set the dictionary for the action names
+        """
+        index = 0
+        self.action_index_name[index] = 'draw'
+        index += 1
+        for i in range(NB_HEAPS):
+            self.action_index_name[index] = 'deck-to-heap'+str(i)
+            index += 1
+        for i in range(NB_COLUMNS):
+            self.action_index_name[index] = 'deck-to-col' + str(i)
+            index += 1
+        for i in range(NB_HEAPS):
+            for j in range(NB_COLUMNS):
+                self.action_index_name[index] = 'col'+str(j)+'-to-heap'+str(i)
+                index += 1
+        for i in range(NB_HEAPS):
+            for j in range(NB_COLUMNS):
+                self.action_index_name[index] = 'heap'+str(i)+'-to-col'+str(j)
+                index += 1
+        for i in range(NB_COLUMNS):
+            for j in range(NB_COLUMNS):
+                if i != j:
+                    self.action_index_name[index] = 'col'+str(i)+\
+                                                    '-to-col'+str(j)
+                    index += 1
+
+    def get_header(self):
+        """
+        Retrieves the header of the data file of a Solitaire game
+        """
+        header = []
+        for color in COLORS:
+            for rank in CARDS:
+                header.append(str(rank)+color)
+        for action in list(self.action_index_name.values()):
+            header.append(action)
+        header.append('reward')
+        return header
+
 
     def play(self, action):
         """

@@ -2,8 +2,6 @@ from IA.node_stocha import *
 import random as rd
 import math
 import copy
-import _thread
-import time
 
 GAMMA = 0.9
 NB_THREAD = 4
@@ -152,4 +150,4 @@ class Mcts_Stocha:
             policy_actions.append(self.root.legal_actions[i])
             policy_probabs.append(ucb_scores[i] / max_ucb)
 
-        return policy_actions, policy_probabs
+        return policy_actions, np.array(policy_probabs)
