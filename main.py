@@ -5,6 +5,7 @@ import threading
 import time
 import numpy as np
 import pandas as pd
+import os.path
 
 NB_THREAD = 2
 
@@ -19,25 +20,29 @@ class myThread (threading.Thread):
         self.probas = None
     def run(self):
         print ("Starting " + self.name)
-        # Get lock to synchronize threads
         mcts = Mcts_Stocha(self.solitaire)
-        self.actions, self.probas = mcts.tree_search(30, 10)
+        self.actions, self.probas = mcts.tree_search(10, 10)
 
 
 def write_csv(file, dataframe):
-    return 0
+    """
+    Write data collected from simulations into a csv file
+    :param file: (string) path of the file
+    :param dataframe: (Dataframe) collected data
+    """
+    print(dataframe)
+    dataframe.to_csv(file, sep=';')
 
 
 if __name__ == '__main__':
 
     solitaire = Solitaire_Engine()
-    header = solitaire.get_header()
     samples = []
-    data = pd.DataFrame(columns=header)
-    while not solitaire.is_over():
+    for t in range(2):
+    #while not solitaire.is_over():
 
         threads = []
-        solitaire.render()
+        #solitaire.render()
         for i in solitaire.actions_dict:
             print(solitaire.actions_dict[i])
         for i in range(NB_THREAD):
@@ -56,13 +61,14 @@ if __name__ == '__main__':
         probas /= 2
 
         full_proba = []
-        for i in range(list(solitaire.action_index_name.keys())[-1]):
-            if i in actions: full_proba[i] = probas[actions.index(i)]
-            else: full_proba[i] = 0
+        for i in range(len(solitaire.action_index_name.keys())):
+            if i in actions: full_proba.append(probas[actions.index(i)])
+            else: full_proba.append(0)
         samples.append(solitaire.get_state() + full_proba)
+        print(samples)
 
         action = np.random.choice(actions, p=probas)
-        if (int(action)) < len(solitaire.actions_dict):
+        if (int(action)) < len(solitaire.action_index_name):
             solitaire.chance_action(int(action))
             solitaire.play(int(action))
         else:
@@ -70,5 +76,6 @@ if __name__ == '__main__':
 
     for i in range(len(samples)):
         samples[i].append(solitaire.score)
-        data.append(samples[i])
+
+    data = pd.DataFrame(samples, columns=solitaire.get_header())
     write_csv("data.csv", data)
