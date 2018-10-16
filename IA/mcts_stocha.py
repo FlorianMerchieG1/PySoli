@@ -4,7 +4,6 @@ import math
 import copy
 
 GAMMA = 0.9
-NB_THREAD = 4
 
 class Mcts_Stocha:
     """
@@ -131,7 +130,6 @@ class Mcts_Stocha:
 
         # Build search tree
         for i in range(nb_trajectories):
-            print(i)
             node, action = self.select(self.root, sampling_width)
             if action == -1: break
             child = self.expand(node, action)

@@ -13,8 +13,6 @@ IN_DECK = 'deck'
 IN_COL = 'col'
 UNDRAWN = 'undraw'
 
-GAMMA = 0.99
-
 ACTIONS = ['draw', 'deck-heap', 'deck-col', 'col-heap', 'heap-col', 'col-col']
 
 class Solitaire_Engine:
@@ -53,15 +51,18 @@ class Solitaire_Engine:
             card = self.main_deck.draw()
             self.cards_state[(card.rank, card.color)] = self.state_dict[IN_COL + str(i)]
             self.columns[i].reveal_card(card)
+        # Reward for scoring
+        self.reward = 0
+        self.time = 0
+        self.score = 0
+        # States stack for avoiding cycles
+        _, state = self.get_state()
+        self.states_stack = [state]
         # Actions dictionary
         self.actions_dict = dict()
         self.legal_actions()
         self.action_index_name = dict()
         self.index_action_to_name()
-        # Reward for scoring
-        self.reward = 0
-        self.time = 0
-        self.score = 0
 
     def is_over(self):
         return self.is_won() or self.is_lost()
@@ -84,6 +85,8 @@ class Solitaire_Engine:
         legal_actions = copy.deepcopy(self.actions_dict)
         sub_index_list = []
         n_draw = 0
+
+        if len(self.actions_dict) == 0: return True
 
         # Game over only if draw is the only possible action
         if len(self.actions_dict) == 1 and self.can_draw():
@@ -321,7 +324,11 @@ class Solitaire_Engine:
         # Check deck-column
         for col in range(NB_COLUMNS):
             if self.can_deck_to_column(col):
-                table[index_action] = (ACTIONS[2], [col])
+                game_copy = copy.deepcopy(self)
+                game_copy.deck_to_column(col)
+                _, state = game_copy.get_state()
+                if state not in self.states_stack:
+                    table[index_action] = (ACTIONS[2], [col])
             index_action += 1
 
         for heap in range(NB_HEAPS):
@@ -335,7 +342,11 @@ class Solitaire_Engine:
             for col1 in range(NB_COLUMNS):
                 # Check heap-col
                 if self.can_heap_to_column(heap, col1):
-                    table[index_action] = (ACTIONS[4], [heap, col1])
+                    game_copy = copy.deepcopy(self)
+                    game_copy.heap_to_column(heap, col1)
+                    _, state = game_copy.get_state()
+                    if state not in self.states_stack:
+                        table[index_action] = (ACTIONS[4], [heap, col1])
                 index_action += 1
 
         for col1 in range(NB_COLUMNS):
@@ -347,7 +358,11 @@ class Solitaire_Engine:
                         # Choose action with the most cards
                         for nb_cards in range(1, max_cards+1):
                             if self.can_column_to_column(col1, col2, nb_cards):
-                                max_nb_cards = nb_cards
+                                game_copy = copy.deepcopy(self)
+                                game_copy.column_to_column(col1, col2, nb_cards)
+                                _, state = game_copy.get_state()
+                                if state not in self.states_stack:
+                                    max_nb_cards = nb_cards
                         if max_nb_cards > -1:
                             table[index_action] = (ACTIONS[5],
                                                    [col1, col2, max_nb_cards])
@@ -422,6 +437,10 @@ class Solitaire_Engine:
         # Score updates
         self.score += self.reward
         self.time += 1
+        # Stack update
+        if name != ACTIONS[0]:
+            _, state = self.get_state()
+            self.states_stack.append(state)
 
     def chance_action(self, action):
         """
@@ -446,7 +465,7 @@ class Solitaire_Engine:
                     state.append(self.cards_state[(rank, color)])
                 else:
                     state.append(self.state_dict[UNDRAWN])
-        return state
+        return state, ''.join(str(x) for x in state)
 
     def render(self):
         """
