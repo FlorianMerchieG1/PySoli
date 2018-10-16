@@ -80,26 +80,8 @@ class Solitaire_Engine:
         """
         Checks if a game is lost.
         """
-        # Copy current state of sub-deck draw and legal actions
-        sub_index_copy = copy.deepcopy(self.sub_deck_index)
-        legal_actions = copy.deepcopy(self.actions_dict)
-        sub_index_list = []
-        n_draw = 0
-
         if len(self.actions_dict) == 0: return True
 
-        # Game over only if draw is the only possible action
-        if len(self.actions_dict) == 1 and self.can_draw():
-            # For each draw of the sub-deck, check if a card can be moved
-            while n_draw < 2*len(self.sub_deck)/3:
-                self.draw()
-                self.legal_actions()
-                if len(self.actions_dict) > 1:
-                    self.actions_dict = legal_actions
-                    self.sub_deck_index = sub_index_copy
-                    return False
-                n_draw += 1
-            return True
         else: return False
 
     def get_reward(self):
@@ -122,38 +104,47 @@ class Solitaire_Engine:
 
         if not self.sub_deck_index:
             start = 0
+            self.sub_deck_index = [i for i in range(min(3, len(self.sub_deck)))]
         else:
             start = self.sub_deck_index[-1] + 1
-
-        if start > len(self.sub_deck):
-            self.sub_deck_index = [i for i in range(3)]
-        else:
-            end = min(start+3, len(self.sub_deck))
-            self.sub_deck_index = [i for i in range(start, end)]
+            if start >= len(self.sub_deck):
+                self.sub_deck_index = [i for i in range(min(3, len(self.sub_deck)))]
+            else:
+                end = min(start+3, len(self.sub_deck))
+                self.sub_deck_index = [i for i in range(start, end)]
 
         self.reward = 0
 
-    def can_deck_to_heap(self, heap):
+    def can_deck_to_heap(self, heap, nb_draw):
         """
         Checks if the card from the deck can be added to a heap
         :param heap: (int) Number of the heap where to move the card
+        :param nb_draw: (int) Number of times to draw before actually playing
         """
-        if not self.can_draw(): return False
-        if not self.sub_deck_index: return False
+        game_copy = copy.deepcopy(self)
+        if not game_copy.can_draw(): return False
+        for i in range(nb_draw):
+            game_copy.draw()
 
-        index = self.sub_deck_index[-1]
-        card = self.sub_deck[index]
+        if not game_copy.sub_deck_index: return False
 
-        if not self.heaps[heap].can_add(card): return False
+        index = game_copy.sub_deck_index[-1]
+        card = game_copy.sub_deck[index]
+
+        if not game_copy.heaps[heap].can_add(card): return False
 
         return True
 
-    def deck_to_heap(self, heap):
+    def deck_to_heap(self, heap, nb_draw):
         """
         Moves the top drawn of the deck to a given heap
         :param heap: (int) number of the heap where to move the card
+        :param nb_draw: (int) Number of times to draw before actually playing
         """
-        if not self.can_deck_to_heap(heap): return False
+        if not self.can_deck_to_heap(heap, nb_draw): return False
+
+        for i in range(nb_draw):
+            self.draw()
 
         index_heap = self.sub_deck_index.pop()
         card = self.sub_deck.pop(index_heap)
@@ -169,27 +160,35 @@ class Solitaire_Engine:
         # Reward update
         self.reward = 10
 
-    def can_deck_to_column(self, col):
+    def can_deck_to_column(self, col, nb_draw):
         """
         Checks if the card from the deck can be added to a column
         :param heap: (int) Number of the column where to move the card
+        :param nb_draw: (int) Number of times to draw before actually playing
         """
-        if not self.can_draw(): return False
-        if not self.sub_deck_index: return False
+        game_copy = copy.deepcopy(self)
+        if not game_copy.can_draw(): return False
+        for i in range(nb_draw):
+            game_copy.draw()
 
-        index = self.sub_deck_index[-1]
-        card = self.sub_deck[index]
+        if not game_copy.sub_deck_index: return False
 
-        if not self.columns[col].can_add(card): return False
+        index = game_copy.sub_deck_index[-1]
+        card = game_copy.sub_deck[index]
+
+        if not game_copy.columns[col].can_add(card): return False
 
         return True
 
-    def deck_to_column(self, col):
+    def deck_to_column(self, col, nb_draw):
         """
         Moves the top drawn of the deck to a given column
         :param col: (int) index of the column where to move the card
+        :param nb_draw: (int) Number of times to draw before actually playing
         """
-        if not self.can_deck_to_column(col): return
+        if not self.can_deck_to_column(col, nb_draw): return
+        for i in range(nb_draw):
+            self.draw()
 
         index_heap = self.sub_deck_index.pop()
         card = self.sub_deck.pop(index_heap)
@@ -312,35 +311,45 @@ class Solitaire_Engine:
         self.actions_dict.clear()
         table = self.actions_dict
 
-        # Check draw
-        if self.can_draw():
-            table[index_action] = (ACTIONS[0],[])
-        index_action += 1
-        # Check deck-heap
-        for heap in range(NB_HEAPS):
-            if self.can_deck_to_heap(heap):
-                table[index_action] = (ACTIONS[1], [heap])
-            index_action += 1
-        # Check deck-column
-        for col in range(NB_COLUMNS):
-            if self.can_deck_to_column(col):
-                game_copy = copy.deepcopy(self)
-                game_copy.deck_to_column(col)
-                _, state = game_copy.get_state()
-                if state not in self.states_stack:
-                    table[index_action] = (ACTIONS[2], [col])
-            index_action += 1
+        cards_list = []
+        nb_draw = 0
+        game_copy = copy.deepcopy(self)
+        if game_copy.sub_deck_index:
+            card = game_copy.sub_deck[game_copy.sub_deck_index[-1]]
+            cards_list.append(card)
+        # For each configuration of the sub-deck, check possible actions
+        if game_copy.sub_deck:
+            while True:
+                # Check deck-heap
+                for heap in range(NB_HEAPS):
+                    if game_copy.can_deck_to_heap(heap, 0):
+                        table[index_action] = (ACTIONS[1], [heap, nb_draw])
+                    index_action += 1
 
+                # Check deck-column
+                for col in range(NB_COLUMNS):
+                    if game_copy.can_deck_to_column(col, 0):
+                        table[index_action] = (ACTIONS[2], [col, nb_draw])
+                    index_action += 1
+
+                # Update sub-deck
+                game_copy.draw()
+                card = game_copy.sub_deck[game_copy.sub_deck_index[-1]]
+                if card in cards_list: break
+                cards_list.append(card)
+                nb_draw += 1
+
+        index_action = int(NB_CARDS_SUBDECK/3 +1) * NB_HEAPS + int(NB_CARDS_SUBDECK/3 +1) * NB_COLUMNS
+        # Check col-heap
         for heap in range(NB_HEAPS):
             for col1 in range(NB_COLUMNS):
-                # Check col-heap
                 if self.can_column_to_heap(col1, heap):
                     table[index_action] = (ACTIONS[3], [col1, heap])
                 index_action += 1
 
+        # Check heap-col
         for heap in range(NB_HEAPS):
             for col1 in range(NB_COLUMNS):
-                # Check heap-col
                 if self.can_heap_to_column(heap, col1):
                     game_copy = copy.deepcopy(self)
                     game_copy.heap_to_column(heap, col1)
@@ -349,9 +358,9 @@ class Solitaire_Engine:
                         table[index_action] = (ACTIONS[4], [heap, col1])
                 index_action += 1
 
+        # Check col-col
         for col1 in range(NB_COLUMNS):
                 for col2 in range(NB_COLUMNS):
-                    # Check col-col
                     if col1 != col2:
                         max_cards = len(self.columns[col1].cards)
                         max_nb_cards = -1
@@ -366,7 +375,7 @@ class Solitaire_Engine:
                         if max_nb_cards > -1:
                             table[index_action] = (ACTIONS[5],
                                                    [col1, col2, max_nb_cards])
-                            index_action += 1
+                        index_action += 1
 
         return list(self.actions_dict.keys())
 
@@ -375,27 +384,26 @@ class Solitaire_Engine:
         Set the dictionary for the action names
         """
         index = 0
-        self.action_index_name[index] = 'draw'
-        index += 1
-        for i in range(NB_HEAPS):
-            self.action_index_name[index] = 'deck-to-heap'+str(i)
-            index += 1
-        for i in range(NB_COLUMNS):
-            self.action_index_name[index] = 'deck-to-col' + str(i)
-            index += 1
-        for i in range(NB_HEAPS):
-            for j in range(NB_COLUMNS):
-                self.action_index_name[index] = 'col'+str(j)+'-to-heap'+str(i)
+        for nb_draw in range(int(NB_CARDS_SUBDECK/3)+1):
+            for i in range(NB_HEAPS):
+                self.action_index_name[index] = 'deck-to-heap'+ str(i) + "-"+ str(nb_draw) + "draws"
+                index += 1
+            for i in range(NB_COLUMNS):
+                self.action_index_name[index] = 'deck-to-col' + str(i) + "-"+ str(nb_draw) + "draws"
                 index += 1
         for i in range(NB_HEAPS):
             for j in range(NB_COLUMNS):
-                self.action_index_name[index] = 'heap'+str(i)+'-to-col'+str(j)
+                self.action_index_name[index] = 'col'+ str(j) + '-to-heap' + str(i)
+                index += 1
+        for i in range(NB_HEAPS):
+            for j in range(NB_COLUMNS):
+                self.action_index_name[index] = 'heap' + str(i) + '-to-col' + str(j)
                 index += 1
         for i in range(NB_COLUMNS):
             for j in range(NB_COLUMNS):
                 if i != j:
-                    self.action_index_name[index] = 'col'+str(i)+\
-                                                    '-to-col'+str(j)
+                    self.action_index_name[index] = 'col' + str(i) +\
+                                                    '-to-col' + str(j)
                     index += 1
 
     def get_header(self):
@@ -423,9 +431,9 @@ class Solitaire_Engine:
         if name == ACTIONS[0]:
             self.draw()
         elif name == ACTIONS[1]:
-            self.deck_to_heap(args[0])
+            self.deck_to_heap(args[0], args[1])
         elif name == ACTIONS[2]:
-            self.deck_to_column(args[0])
+            self.deck_to_column(args[0], args[1])
         elif name == ACTIONS[3]:
             self.column_to_heap(args[0], args[1])
         elif name == ACTIONS[4]:

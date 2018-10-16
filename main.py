@@ -8,10 +8,10 @@ import pandas as pd
 import os.path
 from multiprocessing import Process, Queue, Pipe
 
-NB_THREAD = 8
-NB_TRAJECTORIES = 100
+NB_THREAD = 1
+NB_TRAJECTORIES = 50
 SAMPLING_WIDTH = 10
-NB_GAMES = 100
+NB_GAMES = 10
 
 class myThread (threading.Thread):
     def __init__(self, threadID, name, counter, solitaire):
@@ -23,14 +23,12 @@ class myThread (threading.Thread):
         self.actions = None
         self.probas = None
     def run(self):
-        print ("Starting " + self.name)
         mcts = Mcts_Stocha(self.solitaire)
         self.actions, self.probas = mcts.tree_search(NB_TRAJECTORIES, SAMPLING_WIDTH)
 
 def process_function(queue, solitaire):
-    print("Starting process")
     mcts = Mcts_Stocha(solitaire)
-    actions, probas = mcts.tree_search(NB_TRAJECTORIES, SAMPLING_WIDTH)
+    actions, probas = mcts.tree_search(int(NB_TRAJECTORIES/NB_THREAD), SAMPLING_WIDTH)
     queue.put([actions, probas])
 
 
@@ -52,31 +50,35 @@ def agent():
         solitaire = Solitaire_Engine()
         samples = []
         while not solitaire.is_over():
+            print("Game "+ str(i+1)+ " - Turn "+str(solitaire.time+1))
 
-            #threads = []
-            processes = []
-            queues = []
-            elems = []
-            #solitaire.render()
-            #for i in solitaire.actions_dict:
-            #    print(solitaire.actions_dict[i])
-            for j in range(NB_THREAD):
-                # Add threads to thread list
-                #threads.append(myThread(1, "Thread-" + str(i), 1, copy.deepcopy(solitaire)))
-                queues.append(Queue())
-                processes.append(Process(target=process_function, args=(queues[j], copy.deepcopy(solitaire))))
-                #threads[i].start()
-                processes[j].start()
+            if len(solitaire.actions_dict):
+                processes = []
+                queues = []
+                elems = []
+                #solitaire.render()
+                #for i in solitaire.actions_dict:
+                #    print(solitaire.actions_dict[i])
+                for j in range(NB_THREAD):
+                    # Add threads to thread list
+                    #threads.append(myThread(1, "Thread-" + str(i), 1, copy.deepcopy(solitaire)))
+                    queues.append(Queue())
+                    processes.append(Process(target=process_function, args=(queues[j], copy.deepcopy(solitaire))))
+                    #threads[i].start()
+                    processes[j].start()
 
-            # Wait for all threads to complete
-            for j in range(NB_THREAD):
-                processes[j].join()
-                elems.append(queues[j].get())
-            actions = elems[0][0]
-            probas = np.zeros(len(actions))
-            for j in range(NB_THREAD):
-                probas += elems[j][1]
-            probas /= NB_THREAD
+                # Wait for all threads to complete
+                for j in range(NB_THREAD):
+                    processes[j].join()
+                    elems.append(queues[j].get())
+                actions = elems[0][0]
+                probas = np.zeros(len(actions))
+                for j in range(NB_THREAD):
+                    probas += elems[j][1]
+                probas /= NB_THREAD
+            else:
+                actions = list(solitaire.actions_dict.keys())
+                probas = [1]
 
             full_proba = []
             for j in range(len(solitaire.action_index_name.keys())):
@@ -93,6 +95,9 @@ def agent():
                 solitaire.play(int(action))
             else:
                 print("Invalid Input !")
+
+        if (solitaire.is_won()): print("Won !")
+        else: print("Lost")
 
         for j in range(len(samples)):
             samples[j].append(solitaire.score)
@@ -114,7 +119,9 @@ def human():
             print(str(solitaire.actions_dict[i]) + " - " + str(i))
         action = input("Enter an action number: ")
         if (int(action)) < len(solitaire.action_index_name):
+            start = time.time()
             solitaire.play(int(action))
+            print(str(time.time()-start))
         else:
             print("Invalid Input !")
 

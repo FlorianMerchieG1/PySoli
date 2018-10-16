@@ -4,6 +4,7 @@ import math
 import copy
 
 GAMMA = 0.9
+FACTOR_THRESHOLD = 0.01
 
 class Mcts_Stocha:
     """
@@ -98,7 +99,7 @@ class Mcts_Stocha:
         """
         reward = 0
         time = 0
-        while not game.is_over() and GAMMA ** time > 0.001:
+        while not game.is_over() and GAMMA ** time > FACTOR_THRESHOLD:
             actions = game.legal_actions()
             next_action = rd.choice(actions)
             game.play(next_action)
